@@ -15,7 +15,7 @@ include = ["src/**", "/LICENSE", "/LICENSE-*"]
 default = []
 
 [dependencies]
-hashbrown = { version = "0.17.1", default-features = false, features = [
+hashbrown = { version = "=0.17.1", default-features = false, features = [
     "default-hasher",
     "equivalent",
     "inline-more",
