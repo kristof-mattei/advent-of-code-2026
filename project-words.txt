@@ -13,11 +13,8 @@ endfor
 endmacro
 errorlens
 grcov
-hashset
 headgreen
 idents
-joltage
-joltages
 kristof
 lintian
 mattei
@@ -32,7 +29,6 @@ postprocessors
 profraw
 pyflakes
 rawfile
-representhing
 retag
 retagging
 rhysd
@@ -47,7 +43,6 @@ striptags
 swellaby
 taiki
 targetplatformdash
-taychon
 telem
 tera
 topo
@@ -56,9 +51,7 @@ trixie
 trunc
 uninlined
 uninspectable
-unsat
 unseparated
 usernamehw
 vadimcn
-widht
 zizmor
