@@ -2,15 +2,19 @@
 set -e
 
 build() {
-    APPLICATION_NAME=$1
-    PLATFORM=$2
+    application_name=$1
+    platform=$2
+
+    # locally there is no version bump, CI provides the real patch
+    touch version-bump.patch
+
     docker buildx \
         build \
         --file Dockerfile . \
-        --tag $APPLICATION_NAME:latest \
-        --build-arg APPLICATION_NAME=$APPLICATION_NAME \
-        --platform $PLATFORM \
+        --tag "${application_name}:latest" \
+        --build-arg "APPLICATION_NAME=${application_name}" \
+        --platform "${platform}" \
         --progress=plain
 }
 
-build $(basename ${PWD}) linux/amd64/v3,linux/amd64/v2,linux/amd64,linux/arm64
+build "$(basename "${PWD}")" linux/amd64/v3,linux/amd64/v2,linux/amd64,linux/arm64

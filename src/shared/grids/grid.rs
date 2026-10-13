@@ -40,26 +40,28 @@ impl<T: Clone> Clone for Grid<T> {
 }
 
 impl<T> Grid<T> {
-    /// Builds a new grid
+    /// Builds a new grid.
     ///
-    /// # Panics
-    /// When rows are not equal length
-    #[must_use]
-    pub fn new(data: Vec<Vec<T>>) -> Self {
-        for w in data.windows(2) {
-            assert_eq!(w[0].len(), w[1].len(), "Row length differs");
+    /// # Errors
+    /// When rows are not equal length.
+    #[must_use = "Error value has original data"]
+    pub fn new(data: Vec<Vec<T>>) -> Result<Self, Vec<Vec<T>>> {
+        for &[ref w1, ref w2] in data.array_windows::<2>() {
+            if w1.len() != w2.len() {
+                return Err(data);
+            }
         }
 
         let rows = data.len();
         let columns = data[0].len();
 
-        Self {
+        Ok(Self {
             data: data.into_iter().map(|r| Row(r)).collect(),
             row_len: rows,
             column_len: columns,
             // max_row: rows - 1,
             // max_column: columns - 1,
-        }
+        })
     }
 }
 
@@ -278,6 +280,7 @@ impl<T> IndexMut<usize> for Grid<T> {
 #[cfg(test)]
 mod tests {
     use hashbrown::HashSet;
+    use pretty_assertions::assert_eq;
 
     use super::Grid;
     use crate::shared::grids::{
@@ -291,7 +294,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let rows = g.data.iter().collect::<Vec<_>>();
 
@@ -304,7 +308,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let columns = vec![
             vec![&'a', &'d', &'g'],
@@ -323,7 +328,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let v = vec![
             ((0, 0), &'a'),
@@ -346,7 +352,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let v = [
             ((0, 1), HorizontalVerticalDirection::Up),
@@ -366,7 +373,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let v = [
             ((0, 1), HorizontalVerticalDirection::Right),
@@ -384,7 +392,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let v = [
             ((0, 1), HorizontalVerticalDiagonalDirection::Up),
@@ -408,7 +417,8 @@ mod tests {
             vec!['a', 'b', 'c'],
             vec!['d', 'e', 'f'],
             vec!['g', 'h', 'i'],
-        ]);
+        ])
+        .unwrap();
 
         let v = [
             ((0, 1), HorizontalVerticalDiagonalDirection::Right),

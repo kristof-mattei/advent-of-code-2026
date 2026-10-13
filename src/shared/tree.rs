@@ -106,13 +106,13 @@ impl Side {
     }
 }
 
-/// Converts a slice of &[Option<T>] to a Binary tree
+/// Converts a slice of &[Option<T>] to a Binary tree.
 ///
 /// # Examples
 ///
 /// ```
-/// use advent_of_code_2025::shared::tree::to_bt;
-/// use advent_of_code_2025::shared::tree::tn;
+/// use advent_of_code_2026::shared::tree::to_bt;
+/// use advent_of_code_2026::shared::tree::tn;
 ///
 /// let input = [1.into(), None, 3.into()];
 /// assert_eq!(to_bt(&input), tn(1, None, tn(3, None, None).into()).into());
@@ -120,7 +120,7 @@ impl Side {
 ///
 /// # Panics
 ///
-/// Panics if cannot borrow Rc
+/// Panics if cannot borrow Rc.
 #[must_use]
 pub fn to_bt<T: Copy>(input: &[Option<T>]) -> Option<Rc<RefCell<Node<T>>>> {
     if input.is_empty() {
@@ -160,13 +160,13 @@ pub fn to_bt<T: Copy>(input: &[Option<T>]) -> Option<Rc<RefCell<Node<T>>>> {
     root
 }
 
-/// Converts a Binary tree to a flat representation
+/// Converts a Binary tree to a flat representation.
 ///
 /// # Examples
 ///
 /// ```
-/// use advent_of_code_2025::shared::tree::from_bt;
-/// use advent_of_code_2025::shared::tree::tn;
+/// use advent_of_code_2026::shared::tree::from_bt;
+/// use advent_of_code_2026::shared::tree::tn;
 ///
 /// let input = tn(1, None, tn(3, None, None).into()).into();
 /// assert_eq!(from_bt(input), [1.into(), None, 3.into()]);
@@ -174,7 +174,7 @@ pub fn to_bt<T: Copy>(input: &[Option<T>]) -> Option<Rc<RefCell<Node<T>>>> {
 ///
 /// # Panics
 ///
-/// Panics if cannot borrow Rc
+/// Panics if cannot borrow Rc.
 #[must_use]
 pub fn from_bt<T: Copy>(root: Option<Rc<RefCell<Node<T>>>>) -> Vec<Option<T>> {
     if root.is_none() {
@@ -213,6 +213,7 @@ pub fn tn<T>(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
 
     use crate::shared::tree::{NodeIterator, tn, to_bt};
 

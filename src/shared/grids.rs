@@ -64,14 +64,14 @@ type HorizontalVerticalDiagonalNeighbors<T> =
 pub trait Neighbors {
     type Index: GridIndex;
 
-    /// Gets the horizontal and vertical neighbors
+    /// Gets the horizontal and vertical neighbors.
     fn hv_neighbors(
         &self,
         row_index: Self::Index,
         column_index: Self::Index,
     ) -> HorizontalVerticalNeighbors<Self::Index>;
 
-    /// Gets the horizontal, vertical, and diagonal neighbors
+    /// Gets the horizontal, vertical, and diagonal neighbors.
     fn hvd_neighbors(
         &self,
         row_index: Self::Index,
@@ -313,6 +313,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn test() {
         let first: Vec<char> = vec!['a', 'b', 'c'];

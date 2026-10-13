@@ -5,10 +5,11 @@ use super::day::Day;
 
 fn read_file_base(filepath: impl AsRef<Path>) -> String {
     let f = fs::read_to_string(&filepath);
-    f.unwrap_or_else(|e| {
+    f.unwrap_or_else(|error| {
         panic!(
-            "Error reading file \"{}\": {e:?}",
-            filepath.as_ref().to_str().unwrap()
+            "Error reading file \"{}\": {:?}",
+            filepath.as_ref().to_str().unwrap(),
+            error
         )
     })
 }
@@ -16,7 +17,7 @@ fn read_file_base(filepath: impl AsRef<Path>) -> String {
 /// Helper function that reads a text file to a string.
 /// # Panics
 ///
-/// if the file does not exist or cannot be read
+/// if the file does not exist or cannot be read.
 #[must_use]
 pub fn read_file(folder: &str, day: &Day) -> String {
     let cwd = env::current_dir().unwrap();
@@ -28,7 +29,7 @@ pub fn read_file(folder: &str, day: &Day) -> String {
 /// Helper function that reads a text file to string, appending a part suffix. E.g. like `01-2.txt`.
 /// # Panics
 ///
-/// if the file does not exist or cannot be read
+/// if the file does not exist or cannot be read.
 #[must_use]
 pub fn read_file_part(folder: &str, day: &Day, part: u8) -> String {
     let cwd = env::current_dir().unwrap();
@@ -65,7 +66,7 @@ macro_rules! solution {
             });
 
         fn main() {
-            // use advent_of_code_2025::template::runner::*;
+            // use advent_of_code_2026::template::runner::*;
             let input = $crate::shared::solution::read_file("inputs", &DAY);
 
             let part_1_expected_solution: PartSolution = PartSolution::from($solution_1);

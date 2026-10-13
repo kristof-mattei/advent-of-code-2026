@@ -2,29 +2,27 @@
 name: Release
 
 on:
-  workflow_dispatch: # releasing is manual as we don't want to release every time
+  workflow_dispatch:
 
 concurrency:
-  group: "${{ github.workflow }}"
-  cancel-in-progress: true # only last step is important, which runs or doesn't
+  # Same group as the apply workflow, because both force-push the release branch
+  group: "release"
+  cancel-in-progress: false # this job force-pushes branches and opens PRs, let it finish
 
 permissions:
-  contents: write # to write tags
-  packages: write # to write tags to Docker registry
-  issues: write
-  pull-requests: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
-  # Use docker.io for Docker Hub if empty
-  REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   release:
     name: Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: write # to dispatch this workflow again when main moved during the run
+      contents: write # to create the release commit via createCommitOnBranch
+      pull-requests: write # to refresh the release PR body and close superseded release PRs
     steps:
       - name: Only on main
         if: |
@@ -34,101 +32,218 @@ jobs:
           echo "Only to be executed on main"
           exit 1
 
+      # zizmor: ignore[artipacked] the release branch is pushed with this credential, see the release step
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: true
           show-progress: false
           token: ${{ secrets.TOKEN_TO_TRIGGER_SUBSEQUENT_WORKFLOWS }}
 
-      - name: Cache cargo
-        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
-        env:
-          CACHE_NAME: cargo
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-git-cliff
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
-
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
-
-      - name: Get binstall
-        shell: bash
-        working-directory: /tmp
-        run: |
-          archive="cargo-binstall-x86_64-unknown-linux-musl.tgz"
-          wget \
-            --output-document=- \
-            --timeout=10 \
-            --waitretry=3 \
-            --retry-connrefused \
-            --progress=dot:mega \
-            "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/${archive}" \
-            | tar \
-                --directory=${HOME}/.cargo/bin/ \
-                --strip-components=0 \
-                --no-overwrite-dir \
-                --extract \
-                --verbose \
-                --gunzip \
-                --file=-
-
       - name: Install git-cliff to generate changelog & next version number
-        shell: bash
-        run: |
-          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm git-cliff
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: git-cliff
 
-      - name: Get new version, generated updated changelog and update repo with updated changelog
+      - name: Compute version and build the ballot context
         shell: bash
         id: release
+        env:
+          # git-cliff reads GITHUB_TOKEN from the environment
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          repository=${{ github.repository }}
-          # split at the last / and keep that (kristof-mattei/repo-name -> repo-name)
-          repository=${repository##*/}
+          # git-cliff also applies .cliffignore to --bumped-version and --context, so main's copy from earlier releases would drop commits from the version bump and from the ballot
+          rm --force .cliffignore
 
-          git config --global user.name ${repository}-release[bot]
-          git config --global user.email 864376+${repository}-release[bot]@users.noreply.github.com
+          latest_tag=$(git describe --tags --abbrev=0 || true)
 
-          version=$(git-cliff --bumped-version --unreleased --github-token ${{ secrets.GITHUB_TOKEN }})
-          echo "version=$version" >> ${GITHUB_OUTPUT}
+          echo "::notice::Latest tag: ${latest_tag:-none}"
 
-          commit_message="chore(release): Release ${version}"
+          if [ -n "${latest_tag}" ] && [ -z "$(git log "${latest_tag}..HEAD" --oneline)" ]; then
+            echo "::error::No commits since ${latest_tag}."
+            exit 1
+          fi
 
-          git-cliff --output CHANGELOG.md --bump --with-commit "${commit_message}" --github-token ${{ secrets.GITHUB_TOKEN }}
+          version=$(git-cliff --bumped-version --bump auto --unreleased --offline)
 
-          git add CHANGELOG.md
+          # If git-cliff didn't bump (e.g. chore/ci only commits), force a patch increment
+          # so we never release the same version as the last tag.
+          if [ "${version}" = "${latest_tag}" ]; then
+            version=$(git-cliff --bumped-version --bump patch --unreleased --offline)
+            echo "::notice::No conventional bump detected, forcing patch bump"
+          fi
 
-          git commit --message "${commit_message}"
+          echo "::notice::Version: ${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-          git tag $version --message "${commit_message}"
+          branch="release/${version}"
+          echo "::notice::Branch: ${branch}"
+          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
 
-          git push --follow-tags
+          commit_message="chore(release): prepare for ${version}"
+          echo "commit_message=${commit_message}" >> "${GITHUB_OUTPUT}"
 
-          git-cliff --output diff-CHANGELOG.md --current --github-token ${{ secrets.GITHUB_TOKEN }}
+          main_sha=$(git rev-parse HEAD)
+          echo "main_sha=${main_sha}" >> "${GITHUB_OUTPUT}"
 
-      - name: Upload github release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+          # build the context before writing .cliffignore below, the ballot has to list every commit
+          git-cliff --context --unreleased --tag "${version}" > ballot-context.json
+
+      - name: List open release PRs
+        shell: bash
+        id: siblings
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list \
+            --state open \
+            --limit 100 \
+            --json number,headRefName \
+          | jq --raw-output '
+              .[]
+              | select(.headRefName | startswith("release/v"))
+              | "\(.number) \(.headRefName)"
+            ' > "${RUNNER_TEMP}/siblings.txt"
+
+          echo "file=${RUNNER_TEMP}/siblings.txt" >> "${GITHUB_OUTPUT}"
+
+      - name: Write .cliffignore and generate the changelog
+        shell: bash
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # git-cliff reads GITHUB_TOKEN from the environment
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIBLINGS_FILE: ${{ steps.siblings.outputs.file }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          # Only a checked entry appears in the changelog, so every unreleased commit starts excluded
+          jq --raw-output '.[0].commits[].id' ballot-context.json | sort --unique > "${RUNNER_TEMP}/unreleased.txt"
+
+          # Take the checked entries from the live bodies of the open release PRs, this branch's PR included. A toggle shows up in the body first and only reaches CHANGELOG.md on the next rebuild, so the body wins.
+          : > "${RUNNER_TEMP}/checked.txt"
+
+          while read -r pr_number _; do
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.body // ""' \
+              | grep --perl-regexp --only-matching '^- \[[xX]\] .*/commit/\K[0-9a-f]{40}(?=\)\)\r?$)' >> "${RUNNER_TEMP}/checked.txt" || true
+          done < "${SIBLINGS_FILE}"
+
+          # A release PR closed by hand has no body and no pending toggle left, so its branch's CHANGELOG.md is the latest selection
+          if ! cut --delimiter=" " --fields=2 "${SIBLINGS_FILE}" | grep --quiet --fixed-strings --line-regexp "${BRANCH}" \
+            && git ls-remote --exit-code --heads origin "${BRANCH}" > /dev/null; then
+            git fetch origin "refs/heads/${BRANCH}"
+            git show "FETCH_HEAD:CHANGELOG.md" 2> /dev/null \
+              | grep --perl-regexp --only-matching '/commit/\K[0-9a-f]{40}(?=\)\)$)' >> "${RUNNER_TEMP}/checked.txt" || true
+          fi
+
+          # Exclusions accumulate across releases, so the copy on main is the starting point
+          git show HEAD:.cliffignore > .cliffignore 2> /dev/null || : > .cliffignore
+
+          grep --fixed-strings --line-regexp --invert-match --file "${RUNNER_TEMP}/checked.txt" "${RUNNER_TEMP}/unreleased.txt" >> .cliffignore || true
+          sort --unique --output .cliffignore .cliffignore
+
+          git-cliff --output CHANGELOG.md --tag "${VERSION}"
+
+      - name: Create release commit
+        id: commit
+        uses: $/.github/actions/create-release-commit
         with:
-          body_path: diff-CHANGELOG.md
-          tag_name: ${{ steps.release.outputs.version }}
-          token: ${{ secrets.TOKEN_TO_TRIGGER_SUBSEQUENT_WORKFLOWS }}
+          branch: ${{ steps.release.outputs.branch }}
+          base-sha: ${{ steps.release.outputs.main_sha }}
+          headline: ${{ steps.release.outputs.commit_message }}
+          files: CHANGELOG.md .cliffignore
+          # GITHUB_TOKEN attributes the commit to github-actions[bot]
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Render the ballot
+        id: ballot
+        uses: $/.github/actions/render-ballot-body
+        with:
+          context-file: ballot-context.json
+          compare-to: ${{ steps.release.outputs.branch }}
+          excluded-file: .cliffignore
+
+      - name: Open or update pull request
+        shell: bash
+        env:
+          BODY_FILE: ${{ steps.ballot.outputs.body-file }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+          DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TOKEN_TO_TRIGGER_SUBSEQUENT_WORKFLOWS }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          # Check if a PR already exists for this branch
+          existing_pr=$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing_pr" ]; then
+            # An edit made with GITHUB_TOKEN does not fire pull_request events, so this update does not trigger the apply workflow.
+            # gh pr edit needs read:org even for --body (cli/cli#13575), so the body is set with a REST PATCH.
+            GH_TOKEN="${DEFAULT_TOKEN}" gh api --method PATCH --silent "repos/${GITHUB_REPOSITORY}/pulls/${existing_pr}" \
+              --field "body=@${BODY_FILE}"
+
+            # GitHub does not disable auto-merge on a push by a collaborator
+            GH_TOKEN="${DEFAULT_TOKEN}" gh pr merge "${existing_pr}" --disable-auto
+          else
+            # Opening the PR with GITHUB_TOKEN would not start the required check workflows, so the PAT is used here
+            gh pr create \
+              --base main \
+              --head "${BRANCH}" \
+              --title "chore(release): Release ${VERSION}" \
+              --body-file "${BODY_FILE}"
+          fi
+
+      - name: Close superseded release PRs
+        shell: bash
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIBLINGS_FILE: ${{ steps.siblings.outputs.file }}
+        run: |
+          # A commit that lands after the release PR opened can bump the version. That renames the release branch and leaves the old PR open.
+          # Its checked entries were picked up above.
+          new_pr=$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number')
+
+          while read -r pr_number head_ref; do
+            if [ "${head_ref}" = "${BRANCH}" ]; then
+              continue
+            fi
+
+            echo "::notice::Closing #${pr_number}, superseded by #${new_pr}"
+
+            gh pr close "${pr_number}" --delete-branch --comment "Superseded by #${new_pr}."
+          done < "${SIBLINGS_FILE}"
+
+      - name: Dispatch again if main moved
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAIN_SHA: ${{ steps.release.outputs.main_sha }}
+        run: |
+          # If main moved between the checkout and the PR creation, "Rebuild release after push" found no open release PR yet, so dispatch here instead
+          current_main=$(git ls-remote origin refs/heads/main | cut --fields 1)
+
+          if [ "${current_main}" = "${MAIN_SHA}" ]; then
+            exit 0
+          fi
+
+          echo "::notice::main moved from ${MAIN_SHA} to ${current_main}, dispatching again"
+
+          gh workflow run release.yml --ref main
+
+      - name: Clean up stranded branches
+        if: ${{ (failure() || cancelled()) && steps.release.outputs.branch != '' }}
+        shell: bash
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push origin --delete "${BRANCH}-staging" || true
+
+          # Deleting the release branch would close its PR, so keep it when one exists.
+          # A failing `gh pr list` fails the step (set -e) instead of counting as "no PR".
+          open_pr=$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')
+
+          if [ -z "${open_pr}" ]; then
+            git push origin --delete "${BRANCH}" || true
+          fi

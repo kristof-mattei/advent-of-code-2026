@@ -1,12 +1,17 @@
-code:
-  - ".cargo/**"
+shared: &shared
   - ".github/**"
-  - ".nvmrc"
-  - "*.toml"
-  - "build-scripts/**"
-  - Cargo.lock
+docker:
+  - *shared
+  - ".dockerignore"
   - Dockerfile
+rust: &rust
+  - *shared
+  - "**/*.toml"
+  - ".cargo/**"
   - "src/**"
   - "tests/**"
-  - "package.json"
-  - "pnpm-lock.yaml"
+  - Cargo.lock
+deb:
+  - *rust
+  - LICENSE
+  - README.md

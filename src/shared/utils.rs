@@ -2,8 +2,9 @@
 #[expect(clippy::crate_in_macro_def, reason = "We do want the parent one")]
 macro_rules! test_part_1 {
     ($value:literal) => {{
-        use advent_of_code_2025::shared::Parts;
-        use advent_of_code_2025::shared::solution::read_file;
+        use advent_of_code_2026::shared::Parts;
+        use advent_of_code_2026::shared::solution::read_file;
+        use pretty_assertions::assert_eq;
 
         use crate::{DAY, Solution};
 
@@ -17,8 +18,9 @@ macro_rules! test_part_1 {
 #[expect(clippy::crate_in_macro_def, reason = "We do want the parent one")]
 macro_rules! test_part_2 {
     ($value:literal) => {{
-        use advent_of_code_2025::shared::Parts;
-        use advent_of_code_2025::shared::solution::read_file;
+        use advent_of_code_2026::shared::Parts;
+        use advent_of_code_2026::shared::solution::read_file;
+        use pretty_assertions::assert_eq;
 
         use crate::{DAY, Solution};
 
@@ -32,8 +34,9 @@ macro_rules! test_part_2 {
 #[expect(clippy::crate_in_macro_def, reason = "We do want the parent one")]
 macro_rules! test_example_part_1 {
     ($value:literal, $part:literal) => {{
-        use advent_of_code_2025::shared::Parts;
-        use advent_of_code_2025::shared::solution::read_file_part;
+        use advent_of_code_2026::shared::Parts;
+        use advent_of_code_2026::shared::solution::read_file_part;
+        use pretty_assertions::assert_eq;
 
         use crate::{DAY, Solution};
 
@@ -43,8 +46,9 @@ macro_rules! test_example_part_1 {
         );
     }};
     ($value:literal) => {{
-        use advent_of_code_2025::shared::Parts;
-        use advent_of_code_2025::shared::solution::read_file;
+        use advent_of_code_2026::shared::Parts;
+        use advent_of_code_2026::shared::solution::read_file;
+        use pretty_assertions::assert_eq;
 
         use crate::{DAY, Solution};
 
@@ -56,8 +60,9 @@ macro_rules! test_example_part_1 {
 #[expect(clippy::crate_in_macro_def, reason = "We do want the parent one")]
 macro_rules! test_example_part_2 {
     ($value:literal, $part:literal) => {{
-        use advent_of_code_2025::shared::Parts;
-        use advent_of_code_2025::shared::solution::read_file_part;
+        use advent_of_code_2026::shared::Parts;
+        use advent_of_code_2026::shared::solution::read_file_part;
+        use pretty_assertions::assert_eq;
 
         use crate::{DAY, Solution};
 
@@ -67,8 +72,9 @@ macro_rules! test_example_part_2 {
         );
     }};
     ($value:literal) => {{
-        use advent_of_code_2025::shared::Parts;
-        use advent_of_code_2025::shared::solution::read_file;
+        use advent_of_code_2026::shared::Parts;
+        use advent_of_code_2026::shared::solution::read_file;
+        use pretty_assertions::assert_eq;
 
         use crate::{DAY, Solution};
 

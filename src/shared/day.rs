@@ -8,7 +8,7 @@ use std::str::FromStr;
 /// This value displays as a two digit number.
 ///
 /// ```
-/// # use advent_of_code_2025::shared::day::Day;
+/// # use advent_of_code_2026::shared::day::Day;
 /// const DAY: Day = Day::try_new(8).unwrap();
 /// assert_eq!(DAY.to_string(), "08")
 /// ```

@@ -4,7 +4,8 @@ name: Retag containers after new push / PR
 on:
   # Triggers the workflow pushes to main. They can be either direct pushes, or PRs being merged
   push:
-    branches: [main]
+    branches:
+      - main
 
   # note how we're not doing
   # pull_request_target, as it isn't what we need.
@@ -21,8 +22,7 @@ concurrency:
   cancel-in-progress: false # no we need them
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,11 +32,12 @@ env:
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
+  DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_IMAGE_NAME }}
 
 jobs:
   repo-has-container:
     name: Repo has container?
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       has_container: ${{ steps.determine.outputs.has_container }}
 
@@ -44,89 +45,56 @@ jobs:
       - name: Repo has docker container?
         id: determine
         shell: bash
+        env:
+          HAS_CONTAINER: ${{ vars.HAS_CONTAINER }}
         run: |
-          has_container="${{ vars.HAS_CONTAINER }}"
-          echo "has_container=${has_container:-false}" >> ${GITHUB_OUTPUT}
+          echo "has_container=${HAS_CONTAINER:-false}" >> "${GITHUB_OUTPUT}"
 
   retag-containers:
     name: Retag the containers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    permissions:
+      artifact-metadata: write # actions/attest
+      attestations: write # actions/attest
+      contents: read
+      id-token: write # actions/attest
+      packages: write # retag images in ghcr.io
     needs:
       - repo-has-container
     if: |
       fromJSON(needs.repo-has-container.outputs.has_container) == true
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           show-progress: false
           fetch-depth: 2
 
-      - name: Find out if current commit is a merge
+      - name: Resolve base and PR head SHAs
         shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          EXIT_CODE=0
+          # push event, HEAD^2 is the tip of the incoming PR branch
+          echo "BASE_SHA=${BEFORE_SHA}" >> "${GITHUB_ENV}"
+
+          exit_code=0
           # a commit always has a parent, but if it has 2, the commit is a merge
           # so lets see if we have one
           # since we're listening to the push event we have to do this manually
-          parent2=$(git rev-parse "HEAD^2" --quiet 2>/dev/null) || EXIT_CODE=$?
+          parent2=$(git rev-parse "HEAD^2" --quiet 2>/dev/null) || exit_code=$?
 
-          if [ ${EXIT_CODE} -eq 0 ]
+          if [ ${exit_code} -eq 0 ]
           then
             echo "The head of the incoming PR is ${parent2}"
-            echo "INCOMING_PR_HEAD_COMMIT=${parent2}" >> ${GITHUB_ENV}
-
+            echo "INCOMING_PR_HEAD_COMMIT=${parent2}" >> "${GITHUB_ENV}"
           else
             echo "The incoming push isn't a merge, ergo it's not a PR"
           fi
 
-      - name: Download crane tar, extract, and add folder to path.
-        shell: bash
-        run: |
-          # name of the file in releases we're looking for
-          file_name=go-containerregistry_Linux_x86_64.tar.gz
-
-          # temp location
-          temp_path=$(mktemp --directory --tmpdir=${RUNNER_TEMP})
-
-          # where to download the releases to
-          json_path=${temp_path}/releases.json
-
-          # where to download the archive to
-          archive_path=${temp_path}/${file_name}
-
-          url_to_krane=$(wget \
-              --output-document=- \
-              --timeout=10 \
-              --waitretry=3 \
-              --retry-connrefused \
-              --progress=dot:mega \
-              "https://api.github.com/repos/google/go-containerregistry/releases/latest" \
-              | jq \
-                  --raw-output \
-                  ".assets.[] | select(.browser_download_url | contains(\"${file_name}\")) | .browser_download_url")
-
-          wget \
-            --output-document=- \
-            --timeout=10 \
-            --waitretry=3 \
-            --retry-connrefused \
-            --progress=dot:mega \
-            "${url_to_krane}" \
-            | tar \
-                --directory=${temp_path}/ \
-                --strip-components=0 \
-                --no-overwrite-dir \
-                --extract \
-                --verbose \
-                --gunzip \
-                --file=-
-
-          # append to path
-          echo "${temp_path}" >> ${GITHUB_PATH}
-
       - name: Set up Docker
-        uses: docker/setup-docker-action@e61617a16c407a86262fb923c35a616ddbe070b3 # v4.6.0
+        uses: docker/setup-docker-action@2bf61fb9464cc67f0cbdeabed6aa0380accd1c70 # v5.5.0
         with:
           daemon-config: |
             {
@@ -136,43 +104,55 @@ jobs:
             }
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log into registry ${{ env.REGISTRY }}
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           password: ${{ secrets.GITHUB_TOKEN }}
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
 
+      - name: Log into Docker Hub
+        if: env.DOCKERHUB_IMAGE_NAME != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Set full image name
         shell: bash
         run: |
-          echo "FULL_IMAGE_NAME=${REGISTRY,,}/${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=${REGISTRY,,}/${IMAGE_NAME,,}" >> "${GITHUB_ENV}"
+          echo "FULL_DOCKERHUB_IMAGE_NAME=docker.io/${DOCKERHUB_IMAGE_NAME,,}" >> "${GITHUB_ENV}"
 
-      - name: Find all tags for ${{ env.FULL_IMAGE_NAME }}
+      - name: Find source tag using GitHub CLI
         shell: bash
-        run: |
-          crane ls ${FULL_IMAGE_NAME} >> existing_tags
-
-          echo "These are the existing tags on ${FULL_IMAGE_NAME}:"
-          cat existing_tags
-
-      - name: Check if the incoming PR has a Docker container, which will be our old tag, if not, or if it's just a push, find the appropriate old tag
         env:
-          PR_TAG: "pr-${{ github.event.before }}-${{ env.INCOMING_PR_HEAD_COMMIT }}"
-        shell: bash
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TAG: "pr-${{ env.BASE_SHA }}-${{ env.INCOMING_PR_HEAD_COMMIT }}"
         run: |
-          # search for the tag, there can only be zero or one match
-          # we need the || true because otherwise grep returns exit code 1 and github actions then dies
-          pr_tag_found=$(cat existing_tags | grep -c "^${{ env.PR_TAG }}\$") || true
+          repo_lower="${GITHUB_REPOSITORY,,}"
 
-          if [ $pr_tag_found -eq 1 ]
+          all_tags=$(gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${repo_lower##*/}/versions" \
+            --paginate \
+            --jq '.[] | .metadata.container.tags[]')
+
+          # search for the PR tag, there can only be zero or one match
+          pr_tag_found=$(echo "${all_tags}" | grep -c "^${PR_TAG}\$") || true
+
+          if [ "${pr_tag_found}" -eq 1 ]
           then
             echo "Incoming PR produced a Docker image"
 
-            echo "OLD_TAG=${{ env.PR_TAG }}" >> ${GITHUB_ENV}
-            echo "SUFFIX=actual" >> ${GITHUB_ENV}
+            echo "OLD_TAG=${PR_TAG}" >> "${GITHUB_ENV}"
+            echo "SUFFIX=actual" >> "${GITHUB_ENV}"
+          elif grep --quiet --extended-regexp "^pr-[0-9a-f]{40}-${INCOMING_PR_HEAD_COMMIT}\$" <<< "${all_tags}"
+          then
+            # the base commit's image lacks the incoming PR's changes
+            echo "::error::The image for ${INCOMING_PR_HEAD_COMMIT} was built against a base other than ${BASE_SHA}"
+            exit 1
           else
             # If we don't have an old tag, then the incoming PR didn't produce a container.
             # In which case we're going to find the container referenced to the base commit, and add our current sha as a tag to it
@@ -182,15 +162,21 @@ jobs:
             # so we find the last commit that github processed before this one
             # which will have gone through the same retagging process
             # and use that sha as our key to find the Docker container related to that commit
-            old_tag=$(cat existing_tags | grep "^sha-${{ github.event.before }}-.*\$") # .* is actual or retag
+            old_tag=$(echo "${all_tags}" | grep "^sha-${BASE_SHA}-.*\$") || true # .* is actual or retag
 
-            echo "OLD_TAG=${old_tag}" >> ${GITHUB_ENV}
-            echo "SUFFIX=retag" >> ${GITHUB_ENV}
+            if [ -z "${old_tag}" ]
+            then
+              echo "::error::No matching source tag found for base SHA ${BASE_SHA}"
+              exit 1
+            fi
+
+            echo "OLD_TAG=${old_tag}" >> "${GITHUB_ENV}"
+            echo "SUFFIX=retag" >> "${GITHUB_ENV}"
           fi
 
       - name: Set the new TAGs
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           flavor: |
@@ -199,10 +185,197 @@ jobs:
             type=edge,branch=main
             type=sha,format=long,prefix=sha-,suffix=-${{ env.SUFFIX }}
 
+      - name: Set the new Docker Hub TAGs
+        if: env.DOCKERHUB_IMAGE_NAME != ''
+        id: meta-dockerhub
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: "docker.io/${{ env.DOCKERHUB_IMAGE_NAME }}"
+          flavor: |
+            latest=false
+          tags: |
+            type=edge,branch=main
+
+      - name: Get image digest
+        shell: bash
+        id: digest
+        run: |
+          digest=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}:${OLD_TAG}" --format "{{json .}}" | jq --raw-output ".manifest.digest")
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
       - name: Actually re-tag the container
         shell: bash
+        env:
+          NEW_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          echo "${{ steps.meta.outputs.tags }}" | while read new_tag
-          do
-            docker buildx imagetools create --tag ${new_tag} "${FULL_IMAGE_NAME}:${OLD_TAG}"
+          echo "${NEW_TAGS}" | while IFS= read -r new_tag
+            do
+              docker buildx imagetools create --tag "${new_tag}" "${FULL_IMAGE_NAME}:${OLD_TAG}"
           done
+
+      - name: Attest GHCR image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.FULL_IMAGE_NAME }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Copy the container to Docker Hub
+        if: env.DOCKERHUB_IMAGE_NAME != ''
+        shell: bash
+        env:
+          NEW_TAGS: ${{ steps.meta-dockerhub.outputs.tags }}
+        run: |
+          echo "${NEW_TAGS}" | while IFS= read -r new_tag
+            do
+              skopeo copy --all --preserve-digests --command-timeout 70s --retry-times 5 "docker://${FULL_IMAGE_NAME}:${OLD_TAG}" "docker://${new_tag}"
+          done
+
+      - name: Attest Docker Hub image
+        if: env.DOCKERHUB_IMAGE_NAME != ''
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.FULL_DOCKERHUB_IMAGE_NAME }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+  repo-has-deb:
+    name: Repo has deb?
+    runs-on: ubuntu-26.04
+    outputs:
+      has_deb: ${{ steps.determine.outputs.has_deb }}
+
+    steps:
+      - name: Repo publishes a Debian package?
+        id: determine
+        shell: bash
+        env:
+          HAS_DEB: ${{ vars.HAS_DEB }}
+        run: |
+          echo "has_deb=${HAS_DEB:-false}" >> "${GITHUB_OUTPUT}"
+
+  retag-deb:
+    name: Retag the Debian packages
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      artifact-metadata: write # actions/attest
+      attestations: write # actions/attest
+      contents: read
+      id-token: write # actions/attest
+      packages: write # retag the debs in ghcr.io
+    needs:
+      - repo-has-deb
+    if: |
+      fromJSON(needs.repo-has-deb.outputs.has_deb) == true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 2
+
+      - name: Resolve base and PR head SHAs
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # push event, HEAD^2 is the tip of the incoming PR branch
+          echo "BASE_SHA=${BEFORE_SHA}" >> "${GITHUB_ENV}"
+
+          exit_code=0
+          parent2=$(git rev-parse "HEAD^2" --quiet 2>/dev/null) || exit_code=$?
+
+          if [ ${exit_code} -eq 0 ]
+          then
+            echo "The head of the incoming PR is ${parent2}"
+            echo "INCOMING_PR_HEAD_COMMIT=${parent2}" >> "${GITHUB_ENV}"
+          else
+            echo "The incoming push isn't a merge, ergo it's not a PR"
+          fi
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+
+      - name: Set full deb artifact name
+        shell: bash
+        run: |
+          echo "FULL_DEB_NAME=${REGISTRY,,}/${IMAGE_NAME,,}-deb" >> "${GITHUB_ENV}"
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          oras login "${REGISTRY,,}" --username "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
+
+      - name: Find source tag and re-tag the debs
+        shell: bash
+        id: retag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TAG: "pr-${{ env.BASE_SHA }}-${{ env.INCOMING_PR_HEAD_COMMIT }}"
+        run: |
+          repo_lower="${GITHUB_REPOSITORY,,}"
+
+          # the package doesn't exist before the first push, that's the bootstrap case below, so don't fail here
+          all_tags=$(gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${repo_lower##*/}-deb/versions" \
+            --paginate \
+            --jq '.[] | .metadata.container.tags[]') || true
+
+          # search for the PR tag, there can only be zero or one match
+          pr_tag_found=$(grep --count "^${PR_TAG}\$" <<< "${all_tags}") || true
+
+          if [ "${pr_tag_found}" -eq 1 ]
+          then
+            echo "Incoming PR produced Debian packages"
+
+            old_tag="${PR_TAG}"
+            suffix=actual
+          elif grep --quiet --extended-regexp "^pr-[0-9a-f]{40}-${INCOMING_PR_HEAD_COMMIT}\$" <<< "${all_tags}"
+          then
+            # the base commit's debs lack the incoming PR's changes
+            echo "::error::The Debian packages for ${INCOMING_PR_HEAD_COMMIT} were built against a base other than ${BASE_SHA}"
+            exit 1
+          else
+            # the incoming PR built no debs, so re-key the base commit's debs to the current sha, like the containers
+            echo "Incoming PR produced nothing, or there was just a push to main"
+
+            old_tag=$(grep "^sha-${BASE_SHA}-.*\$" <<< "${all_tags}" | head --lines 1) || true # .* is actual or retag
+
+            suffix=retag
+          fi
+
+          if [ -z "${old_tag}" ]
+          then
+            # no deb in the registry yet, the first PR that builds one starts the chain
+            echo "::notice::No Debian package found for ${PR_TAG} or base ${BASE_SHA}, skipping"
+            echo "found=false" >> "${GITHUB_OUTPUT}"
+
+            exit 0
+          fi
+
+          new_tag="sha-${GITHUB_SHA}-${suffix}"
+
+          oras tag "${FULL_DEB_NAME}:${old_tag}" "edge" "${new_tag}"
+
+          echo "found=true" >> "${GITHUB_OUTPUT}"
+          echo "new_tag=${new_tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Pull the Debian packages
+        if: fromJSON(steps.retag.outputs.found) == true
+        shell: bash
+        env:
+          NEW_TAG: ${{ steps.retag.outputs.new_tag }}
+        run: |
+          mkdir --parents /tmp/deb
+
+          oras pull "${FULL_DEB_NAME}:${NEW_TAG}" --output /tmp/deb
+
+      # same file hash as the build attestation, but signed by the push workflow, which proves the debs made it to main
+      - name: Attest Debian packages
+        if: fromJSON(steps.retag.outputs.found) == true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: /tmp/deb/*.deb

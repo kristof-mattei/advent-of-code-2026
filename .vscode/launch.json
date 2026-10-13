@@ -5,47 +5,31 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug executable 'advent-of-code-2025'",
+            "name": "Debug executable 'advent-of-code-2026'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
-                "args": ["run", "--bin=advent-of-code-2025"]
+                "args": ["run", "--bin=advent-of-code-2026"]
             },
-            "args": [],
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUST_LOG": "DEBUG,advent_of_code_2025=TRACE"
-            },
-            "internalConsoleOptions": "neverOpen",
-            "terminal": "integrated"
+            "args": []
         },
         {
-            "name": "Debug unit tests in executable 'advent-of-code-2025'",
+            "name": "Debug unit tests in executable 'advent-of-code-2026'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
-                "args": ["test", "--bin=advent-of-code-2025"]
+                "args": ["test", "--no-run", "--bin=advent-of-code-2026"]
             },
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUST_LOG": "DEBUG,advent_of_code_2025=TRACE"
-            },
-            "internalConsoleOptions": "neverOpen",
-            "terminal": "integrated"
+            "args": []
         },
         {
             "name": "Debug integration test 'integration_tests'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
-                "args": ["test", "--test=integration_tests"]
+                "args": ["test", "--no-run", "--test=integration_tests"]
             },
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUST_LOG": "DEBUG,advent_of_code_2025=TRACE"
-            },
-            "internalConsoleOptions": "neverOpen",
-            "terminal": "integrated"
+            "args": []
         }
     ]
 }

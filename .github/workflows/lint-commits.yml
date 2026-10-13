@@ -7,8 +7,7 @@ on:
       - main
 
 concurrency:
-  # each new commit to a PR runs this workflow
-  # so we need to avoid a long running older one from overwriting the 'pr-<number>-latest'
+  # each new commit to a PR runs this workflow, the older run's result is obsolete, so cancel it
   group: "${{ github.workflow }} @ ${{ github.ref_name }}"
   cancel-in-progress: true
 
@@ -21,41 +20,36 @@ env:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    if: ${{ !startsWith(github.head_ref, 'release/') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           show-progress: false
           fetch-depth: 0
 
-      - name: Get binstall
+      - name: Enforce strict conventional subjects
         shell: bash
-        working-directory: /tmp
         run: |
-          archive="cargo-binstall-x86_64-unknown-linux-musl.tgz"
-          wget \
-            --output-document=- \
-            --timeout=10 \
-            --waitretry=3 \
-            --retry-connrefused \
-            --progress=dot:mega \
-            "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/${archive}" \
-            | tar \
-                --directory=${HOME}/.cargo/bin/ \
-                --strip-components=0 \
-                --no-overwrite-dir \
-                --extract \
-                --verbose \
-                --gunzip \
-                --file=-
+          # Enforce '<type>(<scope>)!: <description>' with lowercase type and scope.
+          # This also catches non-merge commits with a 'Merge ...' subject, which the ^Merge skip in cliff.toml hides from the git-cliff check below.
+          pattern='^[0-9a-f]+ [a-z]+(\([a-z0-9-]+\))?!?: .+$'
+          if git log --no-merges --format="%h %s" "origin/${GITHUB_BASE_REF}..HEAD" | grep --extended-regexp --invert-match "${pattern}"; then
+            echo "The commit(s) above do not match '<type>(<scope>)!: <description>' with a lowercase type and scope"
+            exit 1
+          fi
 
-      - name: Install cocogitto to get the next version number
-        shell: bash
-        run: |
-          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm cocogitto --pkg-url "{ repo }/releases/download/{ version }/{ name }-{ version }-{ target }.tar.gz" --bin-dir "{ target }/{ bin }{ binary-ext }" --target x86_64-unknown-linux-musl --pkg-fmt tgz --bin cog --strategies crate-meta-data
+      - name: Install git-cliff to lint commits
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: git-cliff
 
       - name: Check the commits
         shell: bash
+        env:
+          GIT_CLIFF__GIT__REQUIRE_CONVENTIONAL: "true"
         run: |
-          cog check --ignore-merge-commits
+          # The range limits linting to this PR's commits, matching the step above
+          git-cliff --offline "origin/${GITHUB_BASE_REF}..HEAD" > /dev/null

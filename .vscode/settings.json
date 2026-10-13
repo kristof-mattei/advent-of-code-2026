@@ -1,15 +1,56 @@
 {
+    "[javascript]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
+    "[json]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
+    "[jsonc]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
+    "[markdown]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
+    "[shellscript]": {
+        "editor.defaultFormatter": "mkhl.shfmt",
+        "editor.formatOnSave": true
+    },
+    "[toml]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
+    "[yaml]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.formatOnSave": true
+    },
     "debug.internalConsoleOptions": "neverOpen",
+    "lldb.launch.env": {
+        "RUST_BACKTRACE": "1",
+        "RUST_LOG": "DEBUG,advent_of_code_2026=TRACE"
+    },
     "lldb.launch.expressions": "simple",
+    "lldb.launch.gracefulShutdown": "SIGTERM",
+    "lldb.launch.postRunCommands": [
+        "process handle SIGTERM --stop false --pass true --notify false"
+    ],
     "lldb.launch.terminal": "integrated",
-    "prettier.configPath": "./prettier.config.mjs",
     "rust-analyzer.cargo.extraEnv": {
         // "RUSTC_BOOTSTRAP": "1"
     },
     "rust-analyzer.cargo.features": [],
     "rust-analyzer.runnables.extraEnv": {
         // "RUSTC_BOOTSTRAP": "1",
-        "RUST_LOG": "DEBUG,advent_of_code_2025=TRACE"
+        "RUST_LOG": "DEBUG,advent_of_code_2026=TRACE"
     },
-    "rust-analyzer.rustfmt.extraArgs": ["+nightly"]
+    "rust-analyzer.rustfmt.extraArgs": ["+nightly"],
+    "rust-analyzer.server.extraEnv": {},
+    "shfmt.formatIgnored": false
 }

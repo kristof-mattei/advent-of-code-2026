@@ -1,5 +1,8 @@
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# check=skip=SecretsUsedInArgOrEnv,error=true
+
 # Rust toolchain setup
-FROM --platform=${BUILDPLATFORM} rust:1.92.0-slim-trixie@sha256:0d8bf269f3ab28ddcdc3a182f519d7499daee82ce2faa4008048ae8adf6977e7 AS rust-base
+FROM --platform=${BUILDPLATFORM} rust:1.99.0-slim-trixie@sha256:2752b332db73fdbb7dc576f06c82ed1f312005784ef913d7e04a28f5f55dc581 AS rust-base
 
 ARG APPLICATION_NAME
 ARG DEBIAN_FRONTEND=noninteractive
@@ -7,33 +10,63 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN rm -f /etc/apt/apt.conf.d/docker-clean \
     && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
-# borrowed (Ba Dum Tss!) from
-# https://github.com/pablodeymo/rust-musl-builder/blob/7a7ea3e909b1ef00c177d9eeac32d8c9d7d6a08c/Dockerfile#L48-L49
-RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lib,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+RUN apt-get update \
     && apt-get upgrade --yes \
     && apt-get install --no-install-recommends --yes \
-        build-essential \
-        musl-dev
+        patch \
+        xz-utils
+
+# trixie only has cargo-auditable 0.6.6, we need >= 0.6.7 for a bare linker
+ADD --checksum=sha256:7676443367c5e33d9fb22acef63cccb5e9202de12dae1b0579995eb3e2bc7a18 https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.7/cargo-auditable-x86_64-unknown-linux-musl.tar.xz /tmp/cargo-auditable-x86_64.tar.xz
+ADD --checksum=sha256:c324af56990601354bbf40080f582ba46f8ec8b807a1388e25bb7e429d285c18 https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.7/cargo-auditable-aarch64-unknown-linux-musl.tar.xz /tmp/cargo-auditable-aarch64.tar.xz
+
+RUN tar --extract --xz --no-same-owner --strip-components 1 \
+        --directory /usr/local/cargo/bin \
+        --file "/tmp/cargo-auditable-$(uname --machine).tar.xz" \
+        "cargo-auditable-$(uname --machine)-unknown-linux-musl/cargo-auditable" \
+    && rm /tmp/cargo-auditable-*.tar.xz
+
+# trixie only has mold 2.37.1
+ADD --checksum=sha256:6c90d4a474c7c0409dfb575be03a5345878ac14fdba18de8b40fa58c60121189 https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-x86_64-linux.tar.gz /tmp/mold-x86_64.tar.gz
+ADD --checksum=sha256:52c759d3689babaea4c42af2f31062a74ab83e17ffb5a8090232534c67b70577 https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-aarch64-linux.tar.gz /tmp/mold-aarch64.tar.gz
+
+RUN tar --extract --gzip --no-same-owner --strip-components 2 \
+        --directory /usr/local/bin \
+        --file "/tmp/mold-$(uname --machine).tar.gz" \
+        --wildcards "*/bin/mold" \
+    && rm /tmp/mold-*.tar.gz
+
+ENV CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc \
+    CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=mold \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=mold \
+    RUSTFLAGS="-Clink-self-contained=yes -Clinker-flavor=ld"
 
 FROM rust-base AS rust-linux-amd64
 ARG TARGET=x86_64-unknown-linux-musl
+ARG TARGETVARIANT
+# empty TARGETVARIANT adds nothing, v3 becomes -Ctarget-cpu=x86-64-v3
+ENV RUSTFLAGS="${RUSTFLAGS}${TARGETVARIANT:+ -Ctarget-cpu=x86-64-}${TARGETVARIANT}"
 
 FROM rust-base AS rust-linux-arm64
 ARG TARGET=aarch64-unknown-linux-musl
 
-FROM rust-linux-${TARGETARCH//\//-} AS rust-cargo-build
+FROM rust-linux-${TARGETARCH} AS rust-cargo-build
 
-ARG DEBIAN_FRONTEND=noninteractive
-# expose into `build.sh`
+# amd64 or arm64
+ARG TARGETARCH
+# linux or ...
+ARG TARGETOS
+# v2, v3 or empty
 ARG TARGETVARIANT
+# like TARGETPLATFORM, but with dashes
+ARG TARGETPLATFORMDASH="${TARGETOS}-${TARGETARCH}-${TARGETVARIANT:-base}"
+ARG CARGO_TARGET_DIR=/build/target/${TARGETPLATFORMDASH}
 
-COPY ./build-scripts /build-scripts
-
-RUN --mount=type=cache,id=apt-cache-${TARGET},from=rust-base,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lib-${TARGET},from=rust-base,target=/var/lib/apt,sharing=locked \
-    /build-scripts/setup-env.sh
+# Debian architecture names match TARGETARCH for amd64 and arm64
+RUN if [ "$(dpkg --print-architecture)" != "${TARGETARCH}" ]; then dpkg --add-architecture "${TARGETARCH}"; fi \
+    && apt-get update \
+    && apt-get install --no-install-recommends --yes "musl-tools:${TARGETARCH}"
 
 RUN rustup target add ${TARGET}
 
@@ -42,36 +75,16 @@ RUN rustup target add ${TARGET}
 # This allows us to copy in the source in a different layer which in turn allows us to leverage Docker's layer caching
 # That means that if our dependencies don't change rebuilding is much faster
 WORKDIR /build
+RUN cargo init --bin --vcs none --name ${APPLICATION_NAME}
+COPY ./.cargo ./.cargo
+COPY ./Cargo.toml ./Cargo.lock ./
 
-RUN cargo init --name ${APPLICATION_NAME}
+RUN cargo fetch --locked
 
-COPY ./.cargo ./Cargo.toml ./Cargo.lock ./
-
-RUN echo "fn main() {}" > ./src/build.rs
-
-# We use `fetch` to pre-download the files to the cache
-# Notice we do this in the target arch specific branch
-# We do this because we want to do it after `setup-env.sh`,
-# as the env is less likely to change than the code
-# We do lock the cache, to avoid corruption when building it for
-# both target platforms. It doesn't matter, as after unlocking the other one
-# just validates, but doesn't need to download anything
-RUN --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db,sharing=locked \
-    --mount=type=cache,id=cargo-registry-index,target=/usr/local/cargo/registry/index,sharing=locked \
-    --mount=type=cache,id=cargo-registry-cache,target=/usr/local/cargo/registry/cache,sharing=locked \
-    cargo fetch
-
-RUN --mount=type=cache,target=/build/target/${TARGET},sharing=locked \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,id=cargo-registry-index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,id=cargo-registry-cache,target=/usr/local/cargo/registry/cache \
-    /build-scripts/build.sh build --release --target-dir ./target/${TARGET}
+RUN cargo auditable build --frozen --release --target "${TARGET}"
 
 # Rust full build
 FROM rust-cargo-build AS rust-build
-
-# to expose into `build.sh`
-ARG TARGETVARIANT
 
 WORKDIR /build
 
@@ -79,36 +92,35 @@ WORKDIR /build
 COPY ./src ./src
 
 # ensure cargo picks up on the fact that we copied in our code
-RUN touch ./src/main.rs ./src/build.rs
+RUN find ./src -type f -name '*.rs' -exec touch {} +
 
 ENV PATH="/output/bin:$PATH"
 
+# build with sources with default version number
+RUN cargo auditable build --frozen --release --target "${TARGET}"
+
+# apply version bump (if any)
+COPY ./version-bump.patch ./
+RUN [ ! -s version-bump.patch ] || patch --strip 1 < version-bump.patch
+
+# build with new version number, minor update
 # --release not needed, it is implied with install
-RUN --mount=type=cache,target=/build/target/${TARGET},sharing=locked \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,id=cargo-registry-index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,id=cargo-registry-cache,target=/usr/local/cargo/registry/cache \
-    /build-scripts/build.sh install --path . --locked --target-dir ./target/${TARGET} --root /output
-
-# Container user setup
-FROM --platform=${BUILDPLATFORM} alpine:3.23.0@sha256:51183f2cfa6320055da30872f211093f9ff1d3cf06f39a0bdb212314c5dc7375 AS passwd-build
-
-# setting `--system` prevents prompting for a password
-RUN addgroup --gid 900 appgroup \
-    && adduser --ingroup appgroup --uid 900 --system --shell /bin/false appuser
-
-RUN cat /etc/group | grep appuser > /tmp/group_appuser
-RUN cat /etc/passwd | grep appuser > /tmp/passwd_appuser
+RUN cargo auditable install --frozen --path . --root /output --target "${TARGET}"
 
 # Final stage, no `BUILDPLATFORM`, this one is run where it is deployed
 FROM scratch
 
 ARG APPLICATION_NAME
 
-COPY --from=passwd-build /tmp/group_appuser /etc/group
-COPY --from=passwd-build /tmp/passwd_appuser /etc/passwd
+COPY <<EOF /etc/passwd
+appuser:x:900:900:appuser:/home/appuser:/bin/false
+EOF
 
-COPY --from=rust-build /output/bin/${APPLICATION_NAME} /app/entrypoint
+COPY <<EOF /etc/group
+appgroup:x:900:appuser
+EOF
+
+COPY --from=rust-build /output/bin/${APPLICATION_NAME} /app/advent-of-code-2026
 
 USER appuser
 
@@ -116,4 +128,4 @@ ENV RUST_BACKTRACE=full
 
 WORKDIR /app
 
-ENTRYPOINT ["/app/entrypoint"]
+ENTRYPOINT ["/app/advent-of-code-2026"]

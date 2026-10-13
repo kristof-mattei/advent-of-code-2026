@@ -1,24 +1,29 @@
 [package]
-name = "advent-of-code-2025"
+name = "advent-of-code-2026"
 version = "0.0.0-development"
 edition = "2024"
-rust-version = "1.92.0"
+rust-version = "1.99.0"
 authors = ["Kristof Mattei"]
 description = "Advent of Code 2025"
 license = "MIT"
 categories = ["playground"]
 keywords = ["playground"]
-repository = "https://github.com/kristof-mattei/advent-of-code-2025"
+repository = "https://github.com/kristof-mattei/advent-of-code-2026"
 include = ["src/**", "/LICENSE", "/LICENSE-*"]
 
+[features]
+default = []
+
 [dependencies]
-hashbrown = { version = "0.16.1", default-features = false, features = [
+hashbrown = { version = "0.17.1", default-features = false, features = [
     "default-hasher",
     "equivalent",
     "inline-more",
 ] }
-z3 = "0.19.6"
 #regex = { version = "1.11.3", features = ["perf", "unicode-perl", "std"] }
+
+[dev-dependencies]
+pretty_assertions = "=1.4.1"
 
 [lints.clippy]
 # don't stop from compiling / running
@@ -41,8 +46,7 @@ allow_attributes_without_reason = { level = "deny", priority = 127 }
 # arbitrary_source_item_ordering = { level = "deny", priority = 127 }
 # Debatable
 # arithmetic_side_effects = { level = "deny", priority = 127 }
-# Debatable, the ones below deny more specific occurences
-# as_conversions = { level = "deny", priority = 127 }
+as_conversions = { level = "deny", priority = 127 }
 as_pointer_underscore = { level = "deny", priority = 127 }
 as_underscore = { level = "deny", priority = 127 }
 assertions_on_result_states = { level = "deny", priority = 127 }
@@ -59,9 +63,10 @@ decimal_literal_representation = { level = "deny", priority = 127 }
 # default_numeric_fallback = { level = "deny", priority = 127 }
 default_union_representation = { level = "deny", priority = 127 }
 deref_by_slicing = { level = "deny", priority = 127 }
-# No, we already have `non_ascii_idents` which is even bette
+# No, we already have `non_ascii_idents` which is even better
 # disallowed_script_idents = { level = "deny", priority = 127 }
 doc_include_without_cfg = { level = "deny", priority = 127 }
+doc_paragraphs_missing_punctuation = { level = "deny", priority = 127 }
 else_if_without_else = { level = "deny", priority = 127 }
 empty_drop = { level = "deny", priority = 127 }
 # Lib only
@@ -200,8 +205,7 @@ unimplemented = { level = "deny", priority = 127 }
 unnecessary_safety_comment = { level = "deny", priority = 127 }
 unnecessary_safety_doc = { level = "deny", priority = 127 }
 unnecessary_self_imports = { level = "deny", priority = 127 }
-
-# unneeded_field_pattern = { level = "deny", priority = 127 }
+unneeded_field_pattern = { level = "deny", priority = 127 }
 # No, this is information for the reader and compiler
 # unreachable = { level = "deny", priority = 127 }
 unseparated_literal_suffix = { level = "deny", priority = 127 }
@@ -247,3 +251,4 @@ uninlined_format_args = { level = "allow", priority = 127 }
 [lints.rust]
 let_underscore_drop = { level = "deny", priority = 127 }
 non_ascii_idents = { level = "deny", priority = 127 }
+

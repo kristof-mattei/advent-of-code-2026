@@ -83,10 +83,10 @@ impl<T: Clone> Clone for InfiniteGrid<T> {
 }
 
 impl<T> InfiniteGrid<T> {
-    /// Creates a grid that repeats infinitely in each direction repeating on the data
+    /// Creates a grid that repeats infinitely in each direction repeating on the data.
     ///
     /// # Panics
-    /// When rows are not equal length
+    /// When rows are not equal length.
     #[must_use]
     pub fn new(data: Vec<Vec<T>>) -> Self {
         for w in data.windows(2) {
@@ -260,6 +260,7 @@ impl<T> Index<isize> for InfiniteGrid<T> {
 #[cfg(test)]
 mod tests {
     use hashbrown::HashSet;
+    use pretty_assertions::assert_eq;
 
     use crate::shared::grids::infinite_grid::InfiniteGrid;
     use crate::shared::grids::{
