@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-# check=skip=SecretsUsedInArgOrEnv,error=true
+# check=skip=SecretsUsedInArgOrEnv;error=true
 
 # Rust toolchain setup
-FROM --platform=${BUILDPLATFORM} rust:1.99.0-slim-trixie@sha256:2752b332db73fdbb7dc576f06c82ed1f312005784ef913d7e04a28f5f55dc581 AS rust-base
+FROM --platform=${BUILDPLATFORM} rust:1.99.1-slim-trixie@sha256:ea0999ff67355d958b8799b6751c879a6d770076d26047dca66f6e51e77930d3 AS rust-base
 
 ARG APPLICATION_NAME
 ARG DEBIAN_FRONTEND=noninteractive
@@ -96,14 +96,10 @@ RUN find ./src -type f -name '*.rs' -exec touch {} +
 
 ENV PATH="/output/bin:$PATH"
 
-# build with sources with default version number
-RUN cargo auditable build --frozen --release --target "${TARGET}"
-
 # apply version bump (if any)
 COPY ./version-bump.patch ./
 RUN [ ! -s version-bump.patch ] || patch --strip 1 < version-bump.patch
 
-# build with new version number, minor update
 # --release not needed, it is implied with install
 RUN cargo auditable install --frozen --path . --root /output --target "${TARGET}"
 
