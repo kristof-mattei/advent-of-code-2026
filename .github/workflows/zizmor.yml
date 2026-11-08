@@ -26,15 +26,14 @@ jobs:
           show-progress: false
 
       - name: Install zizmor
-        uses: taiki-e/install-action@v2.90.1
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: zizmor
 
       - name: Run zizmor
         shell: bash
         env:
-          # a token switches zizmor out of offline mode, enabling the audits that
-          # query GitHub (known-vulnerable actions, ref resolution)
+          # a token switches zizmor out of offline mode, enabling the audits that query GitHub (known-vulnerable actions, ref resolution)
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           zizmor --persona=pedantic .github
