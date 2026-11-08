@@ -131,7 +131,7 @@ jobs:
           rustup update
 
       - name: Install nextest, custom test runner, with native support for junit and grcov
-        uses: taiki-e/install-action@v2.90.1
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: cargo-nextest, grcov
 
@@ -152,7 +152,7 @@ jobs:
         if: |
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: EnricoMi/publish-unit-test-result-action@v2.25.0
+        uses: EnricoMi/publish-unit-test-result-action@v2.26.0
         with:
           check_name: Test results for Rust
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -211,11 +211,7 @@ jobs:
         if: |
           steps.tests.outcome != 'success'
         run: |
-          # the test reporter we use (or any for that matter)
-          # all show a report. But we cannot depend on that report because
-          # we don't know which subsection it belongs in GitHub
-          # so we explicitly fail this one
-          # which will fail All Done
+          # the test report's check run can appear in any workflow's section on GitHub, so it cannot gate All Done, this step fails the job instead
           exit 1
 
   cargo-clippy-and-report:
@@ -261,7 +257,7 @@ jobs:
           show-progress: false
 
       - name: Install git-cliff to calculate the next version number
-        uses: taiki-e/install-action@v2.90.1
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: git-cliff
 
@@ -302,7 +298,7 @@ jobs:
       - *set_up_sccache
 
       - name: Install cargo-semver-checks, and cargo-edit to do set-version
-        uses: taiki-e/install-action@v2.90.1
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: cargo-semver-checks,cargo-edit
 
