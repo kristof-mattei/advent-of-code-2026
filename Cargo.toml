@@ -2,7 +2,7 @@
 name = "advent-of-code-2026"
 version = "0.0.0-development"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 authors = ["Kristof Mattei"]
 description = "Advent of Code 2025"
 license = "MIT"
