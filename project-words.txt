@@ -15,6 +15,7 @@ errorlens
 grcov
 headgreen
 idents
+kjanat
 kristof
 lintian
 mattei
@@ -29,11 +30,11 @@ postprocessors
 profraw
 pyflakes
 qlty
+qltysh
 rawfile
 retag
 retagging
 retags
-rhysd
 rustflags
 samply
 sccache
